@@ -130,14 +130,22 @@ class GenericTarSubLoader(TarSubLoader):
     def map(self, target: target.Target) -> None:
         volumes = {}
 
+        windows_found = False
+
         for member in self.tar.getmembers():
             if member.name == ".":
                 continue
 
+            if member.name.startswith("Windows/System32") or member.name.startswith("/Windows/System32"):
+                windows_found = True
+                if "/" in volumes:
+                    # Root filesystem was already added
+                    volumes["/"].case_sensitive = False
+
             if not member.name.startswith(("/fs/", "fs/", "/sysvol/", "sysvol/")):
                 # Not an acquire tar
                 if "/" not in volumes:
-                    vol = filesystem.VirtualFilesystem(case_sensitive=True)
+                    vol = filesystem.VirtualFilesystem(case_sensitive=not windows_found)
                     vol.tar = self.tar
                     volumes["/"] = vol
                     target.filesystems.add(vol)
