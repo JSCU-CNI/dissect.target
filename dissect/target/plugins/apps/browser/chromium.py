@@ -60,8 +60,17 @@ struct Envelope {
     uint32  ciphertext_len;
     char    ciphertext[ciphertext_len]; // basically until EOF
 };
+
 struct GoogleChromeCipher {
     uint8   flag;                       // 0x01 = AES GCM, 0x02 = ChaCha20 Poly1305
+    char    iv[12];
+    char    ciphertext[32];
+    char    mac_tag[16];
+};
+
+struct GoogleChromeCipherV3 {
+    uint8   flag;                       // 0x03 = CNG + AES CBC + XOR + AES GCM
+    char    encrypted_aes_key[32];
     char    iv[12];
     char    ciphertext[32];
     char    mac_tag[16];
@@ -82,6 +91,8 @@ DOWNLOAD_STATES = {
 
 class ChromiumMixin:
     """Mixin class with methods for Chromium-based browsers."""
+
+    target: Target
 
     DIRS = ()
 
@@ -152,6 +163,9 @@ class ChromiumMixin:
 
         for user, cur_dir in userdirs:
             db_file = cur_dir.joinpath(filename)
+
+            if not db_file.is_file():
+                continue
 
             if db_file in seen:
                 continue
@@ -502,7 +516,8 @@ class ChromiumMixin:
         The SHA1 hash of the user's password or the plaintext password is required to decrypt passwords
         when dealing with encrypted passwords created with Chromium v80 (February 2020) and newer (``v10``).
 
-        Supports decrypting Windows App Bound Encryption passwords from Google Chrome and Microsoft Edge (``v20``).
+        Supports decrypting Windows App Bound Encryption (ABE) passwords from Google Chrome and Microsoft
+        Edge (``v20``).
 
         You can supply a SHA1 hash or plaintext password using the keychain (``-Kv`` or ``-K``).
 
@@ -510,7 +525,7 @@ class ChromiumMixin:
             - https://chromium.googlesource.com/chromium/src/+/master/docs/linux/password_storage.md
             - https://chromium.googlesource.com/chromium/src/+/master/components/os_crypt/sync/os_crypt_linux.cc#40
         """
-        for user, db_file, db in self._iter_db("Login Data"):
+        for user, db_file, db in itertools.chain(self._iter_db("Login Data"), self._iter_db("Login Data For Account")):
             keys = {}
 
             if self.target.os == OperatingSystem.WINDOWS.value:
@@ -558,10 +573,10 @@ class ChromiumMixin:
                     id=row.id,
                     url=row.origin_url,
                     encrypted_username=None,
-                    encrypted_password=row.password_value,
+                    encrypted_password=None if decrypted_password else row.password_value,
                     decrypted_username=row.username_value,
                     decrypted_password=decrypted_password,
-                    encrypted_notes=encrypted_notes,
+                    encrypted_notes=None if decrypted_notes else encrypted_notes,
                     decrypted_notes=decrypted_notes,
                     source=db_file,
                     _target=self.target,
@@ -648,9 +663,14 @@ class ChromiumMixin:
                     keys.app_bound_key = s_plaintext.ciphertext
 
                 else:
-                    # Google Chrome has encrypted the AES decryption key using either AES GCM or ChaCha20 Poly1305
-                    # using a static key.
-                    data = c_elevation.GoogleChromeCipher(s_plaintext.ciphertext)
+                    # Google Chrome has encrypted the AES decryption key using either AES GCM (flag 1, 3) or
+                    # ChaCha20 Poly1305 (flag 2) using a static key.
+                    # The latest iteration (flag 3) encrypts the AES key using CNG + DPAPI-NG ("Google Chromekey1"),
+                    # AES CBC, and is XOR'ed using a static 32 byte key before finally using AES GCM.
+                    flag = s_plaintext.ciphertext[0:1][0]
+
+                    struct = c_elevation.GoogleChromeCipher if flag in (1, 2) else c_elevation.GoogleChromeCipherV3
+                    data = struct(s_plaintext.ciphertext)
 
                     if data.flag == 0x01:
                         key = bytes.fromhex("b31c6e241ac846728da9c1fac4936651cffb944d143ab816276bcc6da0284787")
@@ -659,6 +679,25 @@ class ChromiumMixin:
                     elif data.flag == 0x02:
                         key = bytes.fromhex("e98f37d7f4e1fa433d19304dc2258042090e2d1d7eea7670d41f738d08729660")
                         cipher = ChaCha20_Poly1305.new(key=key, nonce=data.iv)
+
+                    elif data.flag == 0x03:
+                        if not self.target.has_function("cng"):
+                            raise ValueError("Encountered CNG encrypted key but no CNG plugin available.")  # noqa: TRY301
+
+                        if not (cng_key := self.target.cng.find_key("Google Chromekey1")):
+                            raise ValueError("Encountered CNG encrypted key but no 'Google Chromekey1' could be found.")  # noqa: TRY301
+
+                        # This is not actually a 'Private Key', it is the key for the AES CBC cipher. It can be
+                        # identified with the prefix b"KDBM".
+                        if not (plaintext := cng_key.get_property("Private Key")):
+                            raise ValueError(f"No Private Key found in CNG Key {cng_key}")  # noqa: TRY301
+
+                        cbc_cipher = AES.new(plaintext[-32:], AES.MODE_CBC, iv=b"\x00" * 16)
+                        cbc_plain = cbc_cipher.decrypt(data.encrypted_aes_key)
+
+                        xor_key = bytes.fromhex("ccf8a1cec56605b8517552ba1a2d061c03a29e90274fb2fcf59ba4b75c392390")
+                        gcm_key = bytes(_a ^ _b for _a, _b in zip(cbc_plain, xor_key, strict=False))
+                        cipher = AES.new(gcm_key, AES.MODE_GCM, nonce=data.iv)
 
                     else:
                         raise ValueError(f"Unsupported ElevationService key flag {data.flag!r}")  # noqa: TRY301

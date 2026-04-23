@@ -8,6 +8,7 @@ from flow.record.fieldtypes import datetime as dt
 
 from dissect.target.helpers import keychain
 from dissect.target.plugins.apps.browser.chrome import ChromePlugin
+from dissect.target.plugins.os.windows.cng.cng import CNGPlugin
 from dissect.target.plugins.os.windows.dpapi.dpapi import DPAPIPlugin
 from tests._utils import absolute_path
 from tests.conftest import add_win_user
@@ -298,6 +299,81 @@ def target_win_11_users_dpapi(
     return target_win
 
 
+@pytest.fixture
+def target_win_11_users_dpapi_cng(
+    hive_hklm: VirtualHive,
+    hive_hku: VirtualHive,
+    fs_win: VirtualFilesystem,
+    target_win: Target,
+) -> Target:
+    # Add user
+    add_win_user(hive_hklm, hive_hku, target_win, sid="S-1-5-18", home="C:\\WINDOWS\\system32\\config\\systemprofile")
+    add_win_user(
+        hive_hklm,
+        hive_hku,
+        target_win,
+        sid="S-1-5-21-3656658933-2463154391-3030686545-1002",
+        home="C:\\Users\\AnotherUser",
+    )
+
+    # Add system dpapi files
+    fs_win.map_dir(
+        "Windows/System32/Microsoft/Protect",
+        absolute_path("_data/plugins/os/windows/dpapi/fixture/windows_11/Protect_System32"),
+    )
+
+    # Add user dpapi files
+    fs_win.map_dir(
+        "Users/AnotherUser/AppData/Roaming/Microsoft/Protect",
+        absolute_path("_data/plugins/os/windows/dpapi/fixture/windows_11/Protect_AnotherUser"),
+    )
+
+    # Add registry dpapi keys
+    map_lsa_system_keys(hive_hklm, {"Data": "5ef65665", "GBG": "df865f5a", "JD": "bdee0692", "Skew1": "73bc8e8c"})
+    map_lsa_polkey(
+        hive_hklm,
+        POLICY_KEY_PATH_NT6,
+        bytes.fromhex(
+            "00000001ecffe17b2a997440aa939adbff26f1fc0300000000000000da616d31"
+            "4c9d457773de28cbf0ba721b98904cd68f7d0442ca7ad8e5409fe4d8bf7da10c"
+            "8612389537bd7789d6bba9a4632c3ff90a91455dcea3869b87c04c3970b2f6f4"
+            "8071b486b84c00d4fa3fab4f2f67578676fc4ef3072d9801b2ab062a758b4173"
+            "8eee755b57dee2f59d42166c0827d7ecb33903b6a52eb6f5f96b6b9fba9a7ed0"
+            "edf84a2be6b732cff0727e9a"
+        ),
+    )
+    map_lsa_secrets(
+        hive_hklm,
+        {
+            "DPAPI_SYSTEM": bytes.fromhex(
+                "0000000195325072efa465ba92ec5edd44c4fefc030000000000000031291c7b"
+                "4acb32b7c319c6fd70073435b0f4aa9f6e48451cd225382a0703b6505d75201d"
+                "c5c10350492071c92bbc10bebbac687a6caed2d6f2f30d13ff5b744ad56727a8"
+                "5bfb8ee9badcf2f784ca65228591356a7cff0aa5ecac645336d55389"
+            )
+        },
+    )
+
+    # Map system CNG keys
+    fs_win.map_dir(
+        "ProgramData/Microsoft/Crypto/SystemKeys",
+        absolute_path("_data/plugins/os/windows/cng/fixture/windows_11/SystemKeys"),
+    )
+
+    # Map user CNG keys
+    fs_win.map_dir(
+        "Users/AnotherUser/AppData/Roaming/Microsoft/Crypto/Keys",
+        absolute_path("_data/plugins/os/windows/cng/fixture/windows_11/AnotherUser_Keys"),
+    )
+
+    # Register Windows 11 version
+    map_version_value(target_win, "ProductName", "Windows 10 Pro")
+    map_version_value(target_win, "CurrentVersion", "10.0")
+    map_version_value(target_win, "CurrentBuildNumber", "26100")
+
+    return target_win
+
+
 @pytest.mark.parametrize(
     ("keychain_value", "expected_password", "expected_notes"),
     [
@@ -334,13 +410,23 @@ def test_windows_chrome_passwords_dpapi(
     assert len(records) == 2
 
     assert records[0].url == "https://example.com/"
-    assert records[0].encrypted_password == bytes.fromhex(
-        "7631304fc7d5702f638993eb325f1075c1464a57cd02b4cf246ed0fd6cf8b2f1e9f5c4551b536a0b5fc973c411"
-    )
+
+    if expected_password:
+        assert records[0].encrypted_password is None  # since we decrypted the password
+    else:
+        assert records[0].encrypted_password == bytes.fromhex(
+            "7631304fc7d5702f638993eb325f1075c1464a57cd02b4cf246ed0fd6cf8b2f1e9f5c4551b536a0b5fc973c411"
+        )
+
     assert records[0].decrypted_password == expected_password
-    assert records[0].encrypted_notes == bytes.fromhex(
-        "76313052fa24300b1592880a5c3bdfbbcfab1fb10450a3bf385f7547cd76ec900a2ca37c5a6104dff0cbe404"
-    )
+
+    if expected_notes:
+        assert records[0].encrypted_notes is None  # since we decrypted the notes
+    else:
+        assert records[0].encrypted_notes == bytes.fromhex(
+            "76313052fa24300b1592880a5c3bdfbbcfab1fb10450a3bf385f7547cd76ec900a2ca37c5a6104dff0cbe404"
+        )
+
     assert records[0].decrypted_notes == expected_notes
 
 
@@ -454,22 +540,16 @@ def test_chrome_windows_11_decryption(target_win_11_users_dpapi: Target, fs_win:
     assert passwords[0].id == 1
     assert passwords[0].url == "https://elevated-example.com/"
     assert passwords[0].decrypted_username == "username@example.com"
-    assert passwords[0].encrypted_password == bytes.fromhex(
-        "763230b6ed2338175e5baa4daccc34697aa08809a69ead978a869cf11fabe0cafff7edf2340412"
-    )
+    assert passwords[0].encrypted_password is None  # as we decrypted the password
     assert passwords[0].decrypted_password == "password"
-    assert passwords[0].encrypted_notes == bytes.fromhex(
-        "763230892774a36593aefaa21416d3268235e98dd5cd7bc15cca023f669cd5df821066eba9de7bf0fe63f690cd"
-    )
+    assert passwords[0].encrypted_notes is None  # as we decrypted the notes
     assert passwords[0].decrypted_notes == "some note here"
     assert passwords[0].username == "User"
 
     assert passwords[1].id == 2
     assert passwords[1].url == "https://another-example.com/"
     assert passwords[1].decrypted_username == "username@domain.com"
-    assert passwords[1].encrypted_password == bytes.fromhex(
-        "763230e470c68414223312778d6345a548616a03be50106d6be9b0bd19b1a3186eecf7a41426a4eca7ed4eeaa0adf400e3c5"
-    )
+    assert passwords[1].encrypted_password is None  # as we decrypted the password
     assert passwords[1].decrypted_password == "MyPasswordIsSecret!"
     assert passwords[1].username == "User"
 
@@ -499,3 +579,35 @@ def test_benchmark_chrome_userdirs(
     benchmark(
         lambda: target_win_users.add_plugin(ChromePlugin, check_compatible=True) and list(target_win_users.chrome())
     )
+
+
+def test_chrome_windows_11_decryption_v3(target_win_11_users_dpapi_cng: Target, fs_win: VirtualFilesystem) -> None:
+    """Test if we can decrypt Windows 11 Google Chrome ABE v3 items."""
+    fs_win.map_dir(
+        "Users/AnotherUser/AppData/Local/Google/Chrome/User Data",
+        absolute_path("_data/plugins/apps/browser/chrome/dpapi/windows_11_v3/User_Data"),
+    )
+
+    keychain.register_key(
+        key_type=keychain.KeyType.PASSPHRASE,
+        value="password",
+        identifier=None,
+        provider="user",
+    )
+
+    target_win_11_users_dpapi_cng.add_plugin(DPAPIPlugin)
+    target_win_11_users_dpapi_cng.add_plugin(CNGPlugin)
+    target_win_11_users_dpapi_cng.add_plugin(ChromePlugin)
+
+    passwords = list(target_win_11_users_dpapi_cng.chrome.passwords())
+    assert len(passwords) == 1
+
+    assert passwords[0].id == 1
+    assert passwords[0].url == "https://foo.com/"
+    assert passwords[0].decrypted_username == "bar"
+    assert passwords[0].encrypted_password is None  # as we decrypted the password
+    assert passwords[0].decrypted_password == "password"
+    assert passwords[0].encrypted_notes is None  # as we decrypted the notes
+    assert passwords[0].decrypted_notes == "note"
+    assert passwords[0].username == "AnotherUser"
+    assert str(passwords[0].source).endswith("Login Data For Account")
