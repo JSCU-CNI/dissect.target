@@ -66,8 +66,13 @@ def test_android_os_detect_props(target_bare: Target, build_prop_locations: list
 
 def test_android_os_users(target_android: Target, fs_android: VirtualFilesystem) -> None:
     """Test if we detect and parse Android users correctly."""
-    fs_android.map_file("/data/system/users/userlist.xml", absolute_path("_data/plugins/os/unix/linux/android/users/userlist.xml"))
-    fs_android.map_file("/data/system/users/0/settings_global.xml", absolute_path("_data/plugins/os/unix/linux/android/users/settings_global.xml"))
+    fs_android.map_file(
+        "/data/system/users/userlist.xml", absolute_path("_data/plugins/os/unix/linux/android/users/userlist.xml")
+    )
+    fs_android.map_file(
+        "/data/system/users/0/settings_global.xml",
+        absolute_path("_data/plugins/os/unix/linux/android/users/settings_global.xml"),
+    )
     fs_android.map_file("/data/system/users/0.xml", absolute_path("_data/plugins/os/unix/linux/android/users/0.xml"))
     target_android.add_plugin(AndroidPlugin)
 

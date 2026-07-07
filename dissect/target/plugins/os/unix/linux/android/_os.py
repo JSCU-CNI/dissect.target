@@ -6,7 +6,7 @@ from dissect.target.helpers import configutil
 from dissect.target.helpers.record import AndroidUserRecord
 from dissect.target.plugin import OperatingSystem, export
 from dissect.target.plugins.os.unix.linux._os import LinuxPlugin
-from dissect.target.plugins.os.unix.linux.android.util.abx import AbxFile, AbxSettingsFile
+from dissect.target.plugins.os.unix.linux.android.util.abx import ABX, ABXSettingsFile
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -64,7 +64,7 @@ class AndroidPlugin(LinuxPlugin):
         # Try the first user's ``device_name`` first
         if (path := self.target.fs.path("/data/system/users/0/settings_global.xml")).is_file():
             try:
-                return AbxSettingsFile(path).get("device_name")
+                return ABXSettingsFile(path).get("device_name")
             except ValueError:
                 pass
 
@@ -108,7 +108,7 @@ class AndroidPlugin(LinuxPlugin):
             if not path.is_dir() or not (file := path.parent.joinpath(path.name + ".xml")).is_file():
                 continue
             try:
-                abx = AbxFile(file)
+                abx = ABX(file)
                 user = abx.tree.find(".")
             except ValueError as e:
                 self.target.log.warning("Unable to parse %s: %s", file, e)
@@ -133,6 +133,7 @@ class AndroidPlugin(LinuxPlugin):
                 source=file,
                 _target=self.target,
             )
+
 
 def find_build_props(fs: Filesystem) -> Iterator[Path]:
     """Search for Android ``build.prop`` files on the provided :class:`Filesystem`."""

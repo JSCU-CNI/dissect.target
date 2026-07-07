@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from defusedxml import ElementTree
 
-from dissect.target.plugins.os.unix.linux.android.util.abx import AbxFile
+from dissect.target.plugins.os.unix.linux.android.util.abx import ABX
 from tests._utils import absolute_path
 
 
 def test_abx_simple() -> None:
     """Test if we can parse a simple ABX file."""
     file = absolute_path("_data/plugins/os/unix/linux/android/users/userlist.xml")
-    abx = AbxFile(file, to_str=True)
+    abx = ABX(file, to_str=True)
 
     assert ElementTree.tostring(abx.tree.getroot()).decode() == (
         '<users nextSerialNumber="10" version="11" userTypeConfigVersion="0">'
@@ -24,7 +24,7 @@ def test_abx_simple() -> None:
 def test_abx_multiple_root_elements() -> None:
     """Test if we can parse an ABX file with multiple root elements."""
     file = absolute_path("_data/plugins/os/unix/linux/android/users/settings_global.xml")
-    abx = AbxFile(file, to_str=True)
+    abx = ABX(file, to_str=True)
 
     assert (
         ElementTree.tostring(abx.tree.getroot()).decode()

@@ -5,7 +5,7 @@ from xml.etree.ElementTree import ElementTree
 
 from defusedxml import ElementTree as ET
 
-from dissect.target.plugins.os.unix.linux.android.util.abx import AbxFile
+from dissect.target.plugins.os.unix.linux.android.util.abx import ABX
 
 
 def read_android_xml(fh: BinaryIO) -> ElementTree:
@@ -15,7 +15,7 @@ def read_android_xml(fh: BinaryIO) -> ElementTree:
     fh.seek(offset)
 
     if magic == b"ABX\x00":
-        return AbxFile(None, fh).tree
+        return ABX(fh).tree
 
     if magic == b"<?xm":
         return ElementTree(ET.fromstring(fh.read().decode()))

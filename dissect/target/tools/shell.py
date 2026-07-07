@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, ClassVar, TextIO
 
 from defusedxml import ElementTree
 
-from dissect.target.plugins.os.unix.linux.android.util.abx import AbxFile
+from dissect.target.plugins.os.unix.linux.android.util.abx import ABX
 
 try:
     # Allow disabling prompt_toolkit via environment variable
@@ -1517,7 +1517,7 @@ class TargetCli(TargetCmd):
             if len(paths) > 1:
                 print(path)
             try:
-                abx = AbxFile(path, to_str=True)
+                abx = ABX(path, to_str=True)
                 pprint(ElementTree.tostring(abx.tree.getroot()).decode(), stream=stdout)
             except ValueError as e:
                 print(f"Failed to parse file {path}: {e}")

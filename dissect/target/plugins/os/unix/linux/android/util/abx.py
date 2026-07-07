@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import struct
 from enum import IntEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
@@ -10,7 +11,6 @@ from dissect.cstruct import u16, u32, u64
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 
 class XmlType(IntEnum):
@@ -44,7 +44,7 @@ class DataType(IntEnum):
     BOOLEAN_FALSE = 13 << 4
 
 
-class AbxFile:
+class ABX:
     """Android binary XML (ABX) implementation.
 
     References:
@@ -53,15 +53,15 @@ class AbxFile:
         - https://cs.android.com/android/platform/superproject/+/master:frameworks/base/core/java/com/android/internal/util/BinaryXmlPullParser.java
     """
 
-    def __init__(self, path: Path | None = None, fh: BinaryIO | None = None, *, to_str: bool = False) -> None:
-        if path:
+    def __init__(self, path: Path | BinaryIO, *, to_str: bool = False) -> None:
+        if isinstance(path, Path):
             self.path = path
             self.fh = path.open("rb")
-        elif fh:
+        elif hasattr(path, "read"):
             self.path = None
-            self.fh = fh
+            self.fh = path
         else:
-            raise ValueError("No path or file handle provided")
+            raise ValueError("Expected Path or file-like object")
 
         if (magic := self.fh.read(4)) != b"ABX\x00":
             raise ValueError(f"Unexpected magic value {magic!r}")
@@ -82,7 +82,7 @@ class AbxFile:
             DataType.STRING_INTERNED: self._read_string_interned,
         }
 
-        self.INTERNED_STRINGS = []
+        self.interned_strings = []
         self.tree = self.read(to_str=to_str)
 
     def __repr__(self) -> str:
@@ -107,9 +107,9 @@ class AbxFile:
         ref = u16(self.fh.read(2), endian="big", sign=True)
         if ref == -1:
             value = self._read_string()
-            self.INTERNED_STRINGS.append(value)
+            self.interned_strings.append(value)
         else:
-            value = self.INTERNED_STRINGS[ref]
+            value = self.interned_strings[ref]
         return value
 
     def read(self, to_str: bool = False) -> ElementTree:
@@ -194,11 +194,11 @@ class AbxFile:
                         f"Duplicate XmlType.ATTRIBUTE {name} encountered for element {elements[-1]} at {self.fh.tell()}"
                     )
 
-                callable = self.READ_MAP.get(data_type)
-                if not callable:
+                reader = self.READ_MAP.get(data_type)
+                if not reader:
                     raise ValueError(f"Unsupported DataType {data_type!r}")
 
-                value = callable()
+                value = reader()
                 elements[-1].attrib[name] = str(value) if to_str else value
 
         if not (root_closed or (len(elements) == 1 and elements[0] is root)):
@@ -211,7 +211,7 @@ class AbxFile:
         return ElementTree(root)
 
 
-class AbxSettingsFile(AbxFile):
+class ABXSettingsFile(ABX):
     """Android binary ABX settings file parser."""
 
     def get(self, key: str, *, value_only: bool = True) -> Any:
