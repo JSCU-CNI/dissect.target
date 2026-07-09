@@ -158,7 +158,7 @@ def process_plugin_arguments(parser: argparse.ArgumentParser, args: argparse.Nam
     It puts the excluded function paths inside ``args.excluded_functions`` as a side effect.
 
     Returns:
-        ``True`` if there are multiple output types detected, false otherwise.
+        Set of plugin output types for all matching functions.
     """
     # Show help for a function or in general
     if "-h" in rest or "--help" in rest:
@@ -170,13 +170,17 @@ def process_plugin_arguments(parser: argparse.ArgumentParser, args: argparse.Nam
         plugin_class = load(func)
         if issubclass(plugin_class, OSPlugin):
             obj = getattr(OSPlugin, func.method_name)
+        elif func.method_name == "__call__":
+            obj = plugin_class
         else:
             obj = getattr(plugin_class, func.method_name)
 
         if isinstance(obj, type) and issubclass(obj, Plugin):
             parser = generate_argparse_for_plugin_class(obj, usage_tmpl=USAGE_FORMAT_TMPL)
         elif isinstance(obj, (Callable, property)):
-            parser = generate_argparse_for_method(getattr(obj, "fget", obj), usage_tmpl=USAGE_FORMAT_TMPL)
+            parser = generate_argparse_for_method(
+                getattr(obj, "fget", obj), usage_tmpl=USAGE_FORMAT_TMPL, plugin=getattr(func, "cls", None)
+            )
         else:
             parser.error(f"can't find plugin with function `{func.method_name}`")
         parser.print_help()
@@ -331,6 +335,7 @@ def list_children(args: argparse.Namespace) -> None:
 def generate_argparse_for_method(
     method: Callable,
     usage_tmpl: str | None = None,
+    plugin: Plugin | None = None,
 ) -> argparse.ArgumentParser:
     """Generate an ``argparse.ArgumentParser`` for a bound or unbound ``Plugin`` class method."""
     # allow functools.partial wrapped method
@@ -350,6 +355,10 @@ def generate_argparse_for_method(
 
     for args, kwargs in getattr(method, "__args__", []):
         parser.add_argument(*args, **kwargs)
+
+    if plugin:
+        for args, kwargs in getattr(plugin, "__args__", []):
+            parser.add_argument(*args, **kwargs)
 
     usage = parser.format_usage()
     offset = usage.find(parser.prog) + len(parser.prog)
@@ -375,6 +384,9 @@ def generate_argparse_for_plugin_class(
     parser = argparse.ArgumentParser(description=desc, formatter_class=help_formatter, conflict_handler="resolve")
 
     for args, kwargs in getattr(plugin_cls.__call__, "__args__", []):
+        parser.add_argument(*args, **kwargs)
+
+    for args, kwargs in getattr(plugin_cls, "__args__", []):
         parser.add_argument(*args, **kwargs)
 
     usage = parser.format_usage()
