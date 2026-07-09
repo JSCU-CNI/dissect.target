@@ -242,7 +242,9 @@ def open_target(args: argparse.Namespace, *, apply: bool = True) -> Target:
     return target
 
 
-def open_targets(args: argparse.Namespace, *, apply: bool = True, rest: list[str] | None = None) -> Iterator[Target]:
+def open_targets(
+    args: argparse.Namespace, *, apply: bool = True, unknown_args: list[str] | None = None
+) -> Iterator[Target]:
     direct: bool = getattr(args, "direct", False) or getattr(args, "direct_sensitive", False)
     children: bool = getattr(args, "children", False)
     child: str | None = getattr(args, "child", None)
@@ -250,7 +252,9 @@ def open_targets(args: argparse.Namespace, *, apply: bool = True, rest: list[str
     targets: Iterable[Target] = (
         [Target.open_direct(args.targets, case_sensitive=getattr(args, "direct_sensitive", False))]
         if direct
-        else Target.open_all(args.targets, include_children=children, recursive=args.recursive, apply=apply, rest=rest)
+        else Target.open_all(
+            args.targets, include_children=children, recursive=args.recursive, apply=apply, unknown_args=unknown_args
+        )
     )
 
     for target in targets:

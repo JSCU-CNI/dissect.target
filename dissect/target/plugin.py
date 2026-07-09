@@ -118,7 +118,7 @@ class FunctionDescriptor:
 
     @property
     def args(self) -> list[tuple[list[str], dict[str, Any]]]:
-        return getattr(self.func, "__args__", [])
+        return getattr(self.cls, "__args__", []) + getattr(self.func, "__args__", [])
 
 
 @dataclass(frozen=True, eq=True, slots=True)
@@ -465,9 +465,9 @@ class Plugin:
     def get_args(self) -> argparse.Namespace:
         """Return argparse arguments for this :class:`Plugin`."""
         args = None
-        if self.target.rest_args:
+        if self.target.unknown_args:
             parser = generate_argparse_for_plugin_class(self.__class__)
-            args, _rest = parser.parse_known_args(self.target.rest_args)
+            args, _rest = parser.parse_known_args(self.target.unknown_args)
 
         return LenientNamespace(**dict(args._get_kwargs()) if args else {})
 

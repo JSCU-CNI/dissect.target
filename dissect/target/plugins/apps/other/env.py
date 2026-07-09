@@ -7,10 +7,11 @@ from dissect.target.exceptions import UnsupportedPluginError
 from dissect.target.helpers.configutil import Env
 from dissect.target.helpers.record import TargetRecordDescriptor
 from dissect.target.plugin import Plugin, arg, export
-from dissect.target.target import Target
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from dissect.target.target import Target
 
 EnvironmentFileRecord = TargetRecordDescriptor(
     "application/other/file/environment",
@@ -24,7 +25,7 @@ EnvironmentFileRecord = TargetRecordDescriptor(
 )
 
 
-@arg("--path", required=True, help="path to scan environment files in")
+@arg("--path", required=True, type=Path, help="path to scan environment files in")
 @arg("--extension", default="env", help="extension of files to scan")
 class EnvironmentFilePlugin(Plugin):
     """Environment file plugin."""

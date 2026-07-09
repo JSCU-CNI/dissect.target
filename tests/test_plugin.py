@@ -1397,10 +1397,11 @@ def test_function_required_arguments(target_default: Target) -> None:
     assert envfile_fd
     assert envfile_fd.args == [
         (
-            ("--env-path",),
+            ("--path",),
             {
                 "help": "path to scan environment files in",
                 "required": True,
+                "type": Path,
             },
         ),
         (
@@ -1421,12 +1422,12 @@ def test_plugin_runtime_info() -> None:
     assert func_desc.cls is EnvironmentFilePlugin
     assert func_desc.func is EnvironmentFilePlugin.envfile
     assert func_desc.record is EnvironmentFilePlugin.envfile.__record__
-    assert func_desc.args == EnvironmentFilePlugin.envfile.__args__
+    assert func_desc.args == EnvironmentFilePlugin.__args__
 
 
 def test_find_by_record_field_type(target_default: Target) -> None:
     assert "filesystem.walkfs.walkfs" in [desc.path for desc in find_functions_by_record_field_type("path")]
-    assert "apps.other.env.envfile" in [
+    assert "filesystem.yara.yara" in [
         desc.path for desc in find_functions_by_record_field_type("path", target_default, compatibility=True)
     ]
 
@@ -1711,16 +1712,18 @@ def test_exported_plugin_format(descriptor: FunctionDescriptor) -> None:
         assert settings.get("help"), f"No help text for argument {names[0]} in function {descriptor.func.__qualname__}"
 
         dest = settings.get("dest") or names[-1].strip("-").replace("-", "_")
-        assert dest in annotations, (
-            f"Missing type annotation for argument {dest} in function {descriptor.func.__qualname__}"
-        )
 
-        # TODO: More strictly check type annotation, use a contains right now to also match optionals
-        type_ = "bool" if is_bool_action else getattr(settings.get("type"), "__name__", "str")
-        assert type_ in annotations[dest], (
-            f"Invalid type annotation for argument {dest} in function {descriptor.func.__qualname__} "
-            f"({annotations[dest]} instead of {type_})"
-        )
+        if dest not in {name[-1].strip("-").replace("-", "_") for name, _ in getattr(descriptor.cls, "__args__", [])}:
+            assert dest in annotations, (
+                f"Missing type annotation for argument {dest} in function {descriptor.func.__qualname__}"
+            )
+
+            # TODO: More strictly check type annotation, use a contains right now to also match optionals
+            type_ = "bool" if is_bool_action else getattr(settings.get("type"), "__name__", "str")
+            assert type_ in annotations[dest], (
+                f"Invalid type annotation for argument {dest} in function {descriptor.func.__qualname__} "
+                f"({annotations[dest]} instead of {type_})"
+            )
 
         assert settings.get("type") is not str, (
             f"Superfluous type of str for argument {names[0]} in function {descriptor.func.__qualname__}: "
@@ -1970,7 +1973,7 @@ class ExampleArgumentPlugin(Plugin):
 def test_plugin_arguments(target_bare: Target) -> None:
     """Test if we handle :class:`Plugin` arguments correctly."""
     # Simulate arguments passed to ``target-query``
-    target_bare.rest_args = ["--my-arg=example-plugin-value", "--some-other-unrelated-argument=1"]
+    target_bare.unknown_args = ["--my-arg=example-plugin-value", "--some-other-unrelated-argument=1"]
 
     # Register the plugin with the target.
     plugin = target_bare.add_plugin(ExampleArgumentPlugin)
