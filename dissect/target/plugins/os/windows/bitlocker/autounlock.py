@@ -150,7 +150,7 @@ class BitlockerAutoUnlock(Plugin):
                     continue
 
                 try:
-                    extern_key_datum = encrypted_auto_unlock_datum.unbox(bde._used_key)
+                    extern_key_datum = encrypted_auto_unlock_datum.unbox(bde._vmk)
                     key_datum = encrypted_datum.unbox(extern_key_datum)
                 except ValueError as e:
                     self.target.log.warning("Failed to unbox key datums for %s: %s", guid, e)
@@ -167,7 +167,7 @@ class BitlockerAutoUnlock(Plugin):
                 )
 
 
-def find_sysvol_bde(target: Target) -> BDE | None:
+def find_sysvol_bde(target: Target) -> BDE:
     """Find the :class:`BDE` instance of the :class:`Target` system volume."""
     try:
         sysvol = target.fs.mounts["sysvol"]

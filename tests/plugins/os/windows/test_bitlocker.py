@@ -92,7 +92,7 @@ def target_win_bitlocker_auto_unlock(
     ):
         # Mock the sysvol BDE object
         find_sysvol_bde.return_value = find_sysvol_bde
-        find_sysvol_bde._used_key = bytes.fromhex("9cdaca10306f5cef4f7be4075c4094fb927d69f6102db85ea9126cabd53a919b")
+        find_sysvol_bde._vmk = bytes.fromhex("9cdaca10306f5cef4f7be4075c4094fb927d69f6102db85ea9126cabd53a919b")
         find_datum = MagicMock()
         datum = Datum.from_bytes(
             bytes.fromhex(
