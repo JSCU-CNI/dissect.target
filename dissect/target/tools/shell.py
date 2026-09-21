@@ -1633,8 +1633,8 @@ class TargetCli(TargetCmd):
             open_shell(list(open_targets(args)), args.python, args.registry)
             return False
 
-        # Directly use the filesystem instead of DirLoader for unused filesystems.
-        if len(paths) == 1 and paths[0].parent.name == "$fs$":
+        # Directly use a Filesystem instead of DirLoader for unused mounted filesystems.
+        if len(paths) == 1 and paths[0].as_posix().startswith("/$fs$"):
             # We pass all unused filesystems to the new Target since those filesystems could be used by the Target
             # as well. We pass the preferred filesystem to the first argument to make sure that filesystem is used
             # for initial OS detection.
