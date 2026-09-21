@@ -474,6 +474,8 @@ class Target:
         Do not use directly unless you know what you are doing.
         Instead use :meth:`Target.open` or :meth:`Target.open_all`.
 
+        When given multiple :class:`Filesystem` in a list, the first filesystem is used to determine the target OS.
+
         Args:
             fs: Filesystem(s) to make available to the :class:`Target`.
             apply: Resolve all disks, volumes and filesystems and load an operating system on the :class:`Target`.
@@ -1100,10 +1102,10 @@ class FilesystemCollection(Collection[filesystem.Filesystem]):
                 self.add(subfs)
 
 
-def unused_filesystems(target: Target, first: Path | None = None) -> Iterator[filesystem.Filesystem]:
+def unused_filesystems(target: Target, first: Path | str | None = None) -> Iterator[filesystem.Filesystem]:
     """Yield :class:`Filesystem` for all unused mounted ``/$fs$/<fsN>`` entries."""
     if first:
-        yield (first_fs := target.fs.mounts[first.as_posix()])
+        yield (first_fs := target.fs.mounts[first.as_posix() if isinstance(first, Path) else first])
 
     for path, fs in target.fs.mounts.items():
         if path.startswith("/$fs$"):
